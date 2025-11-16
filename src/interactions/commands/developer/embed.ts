@@ -1,30 +1,32 @@
-import { ApplicationIntegrationType, InteractionContextType, MessageFlags, SlashCommandBuilder } from 'discord.js';
+import { ApplicationIntegrationType, InteractionContextType, MessageFlags, SlashCommandBuilder, PermissionFlagsBits, Embed, EmbedBuilder } from 'discord.js';
 
 import { Command } from 'classes/command';
 
 import { ModuleType } from 'types/interactions';
 
-import { CustomEmbedBuilder } from 'classes/custom-embed';
+import { CustomEmbedBuilder, getEmbed } from 'classes/custom-embed';
 import { logger } from 'utils/logger';
 
 export default new Command({
   module: ModuleType.General,
+  cooldown: 30_000,
   botPermissions: ['SendMessages'],
   data: new SlashCommandBuilder()
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setContexts(InteractionContextType.Guild)
+    .setIntegrationTypes(ApplicationIntegrationType.GuildInstall)
     .setName('embed')
-    .setDescription('Shows you roundtrip and websocket heartbeat latency')
-    .setIntegrationTypes(ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall)
-    .setContexts(InteractionContextType.Guild, InteractionContextType.PrivateChannel, InteractionContextType.BotDM),
-  async execute({ interaction, client, lng }) {
+    .setDescription('Open an Embed Builder where you can create/edit embeds!'),
+  async execute({ interaction, client }) {
     if (!interaction.inCachedGuild()) {
       await interaction.reply({
-        content: 'This command can only be used in servers.',
+        embeds: [new EmbedBuilder().setDescription(`${client.customEmojis.Fail} This command can only be ran in a guild!`).setColor('#FF6666')],
         flags: [MessageFlags.Ephemeral]
       });
       return;
     }
 
-    await interaction.deferReply({ flags: [] });
+    await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
     const customBuilder = new CustomEmbedBuilder({
       client,
@@ -32,10 +34,13 @@ export default new Command({
     });
 
     customBuilder.once('submit', async (data, interaction) => {
-      logger.debug(data, 'Embed data:');
-
       await interaction.deferUpdate();
       await interaction.deleteReply();
+
+      const msg: any = { embeds: [getEmbed(interaction.user, interaction.guild, data.embed)] };
+      if (data.content) msg.content = data.content;
+
+      await interaction.channel?.send(msg).catch((err: any) => logger.debug({ err }, 'Could not edit message'));
     });
   }
 });
