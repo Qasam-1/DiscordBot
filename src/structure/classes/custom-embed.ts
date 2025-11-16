@@ -22,6 +22,7 @@ import type { DiscordClient } from 'classes/client';
 import type { Embed, Message } from 'types/guild';
 
 import { logger } from 'utils/logger';
+import { getMessage, updateMessages } from 'db/message';
 
 export class CustomEmbedBuilder extends events {
   private message: Message = {
@@ -86,14 +87,18 @@ export class CustomEmbedBuilder extends events {
     });
 
     collector.on('end', (_, reason) => {
-      if (reason === 'idle')
+      if (reason === 'idle') {
         interaction
           .editReply({
-            content: null,
+            content: this.message.content ?? '',
             embeds: [embed],
             components: [...this.getButtons(true), ...this.getSelection(true)]
           })
           .catch((err) => logger.debug({ err }, 'Could not edit message'));
+      }
+
+      // Clean up event listeners to prevent memory leaks
+      this.removeAllListeners();
     });
 
     collector.on('collect', async (selectionInteraction) => {
@@ -708,7 +713,48 @@ export class CustomEmbedBuilder extends events {
               if (!submitted) return;
 
               const input = submitted.fields.getTextInputValue('input-custom-import');
-              logger.debug(input);
+              const msg = await getMessage(input);
+
+              if (!msg?.message) {
+                await submitted
+                  .reply({
+                    embeds: [new EmbedBuilder().setDescription('<:Fail:1354511452894921037> Invalid export code provided.').setColor('#FF6666')],
+                    flags: [MessageFlags.Ephemeral]
+                  })
+                  .catch((err) => logger.debug({ err }, 'Could not send reply'));
+                return;
+              }
+              this.message = msg.message;
+
+              await submitted.deferUpdate().catch((err) => logger.debug({ err }, 'Could not defer update'));
+              await interaction
+                .editReply({
+                  content: this.message.content ?? '',
+                  embeds: [getEmbed(user, guild, this.message.embed)],
+                  components: [...this.getSelection(false), ...this.getButtons(false)]
+                })
+                .catch((err) => logger.debug({ err }, 'Could not edit reply'));
+            }
+            break;
+
+          case 'select-custom-export':
+            {
+              const customId = `puffer_${Date.now().toString(36)}${Math.random().toString(36).substring(2, 15)}`.substring(0, 29);
+
+              await updateMessages(customId, user.id, this.message as any);
+
+              await selectionInteraction
+                .reply({
+                  embeds: [
+                    new EmbedBuilder()
+                      .setDescription(
+                        `<:Success:1354511612974989484> Your message has been exported successfully! Here's your exportable code:\n\`\`\`${customId}\`\`\`\n-# You can share this code with other people for them to import your message.`
+                      )
+                      .setColor('#66FF66')
+                  ],
+                  flags: [MessageFlags.Ephemeral]
+                })
+                .catch((err) => logger.debug({ err }, 'Could not send message'));
             }
             break;
         }
@@ -716,6 +762,8 @@ export class CustomEmbedBuilder extends events {
     });
 
     collector.on('collect', async (buttonInteraction) => {
+      if (!buttonInteraction.isButton()) return;
+
       switch (buttonInteraction.customId) {
         case 'button-custom-save':
           {
@@ -733,11 +781,9 @@ export class CustomEmbedBuilder extends events {
       }
     });
   }
-
   private isValidEmbed(embedData: Embed, user: User, guild: Guild) {
     try {
       const embed = getEmbed(user, guild, embedData);
-
       if (embed) return true;
       else return false;
     } catch (err) {
@@ -745,27 +791,23 @@ export class CustomEmbedBuilder extends events {
       return false;
     }
   }
-
   private getMessage(user: User, guild: Guild): InteractionEditReplyOptions {
     const embedData = this.message.embed;
-
     if (isEmptyEmbed(embedData)) {
       return {
         content: this.message.content ?? '',
         embeds: [
           new EmbedBuilder()
             .setTitle('<:Palette:1406000920310845491> Embed Editor')
-            .setDescription('> You can edit this embed using the components below, and press **<:Tick:1353102784106336340> Save** when you are done.')
+            .setDescription('> You can edit this embed using the components below, and press <:Tick:1353102784106336340> Save when you are done.')
         ]
       };
     }
-
     return {
       content: this.message.content ?? '',
       embeds: [getEmbed(user, guild, this.message.embed)]
     };
   }
-
   private getSelection(disabled: boolean = false) {
     return [
       new ActionRowBuilder<StringSelectMenuBuilder>().setComponents(
@@ -845,7 +887,6 @@ export class CustomEmbedBuilder extends events {
       )
     ];
   }
-
   private getButtons(disabled: boolean = false) {
     return [
       new ActionRowBuilder<ButtonBuilder>().setComponents(
@@ -871,27 +912,25 @@ export class CustomEmbedBuilder extends events {
     ];
   }
 }
-
 // not in use currently, but might be useful later
 export function replacePlaceholders(string: string = '', user: User, guild: Guild) {
   return string
     .replace(/{user}/g, user.toString())
-    .replace(/{user\.mention}/g, user.toString())
-    .replace(/{user\.username}/g, user.username)
-    .replace(/{user\.id}/g, user.id)
-    .replace(/{user\.avatar}/g, user.displayAvatarURL())
+    .replace(/{user.mention}/g, user.toString())
+    .replace(/{user.username}/g, user.username)
+    .replace(/{user.id}/g, user.id)
+    .replace(/{user.avatar}/g, user.displayAvatarURL())
     .replace(/{server}/g, guild.name)
-    .replace(/{server\.name}/g, guild.name)
-    .replace(/{server\.id}/g, guild.id)
-    .replace(/{server\.icon}/g, guild.iconURL() || '')
-    .replace(/{server\.member_count}/g, guild.memberCount.toString())
+    .replace(/{server.name}/g, guild.name)
+    .replace(/{server.id}/g, guild.id)
+    .replace(/{server.icon}/g, guild.iconURL() || '')
+    .replace(/{server.member_count}/g, guild.memberCount.toString())
     .replace(/{guild}/g, guild.name)
-    .replace(/{guild\.name}/g, guild.name)
-    .replace(/{guild\.id}/g, guild.id)
-    .replace(/{guild\.icon}/g, guild.iconURL() || '')
-    .replace(/{guild\.member_count}/g, guild.memberCount.toString());
+    .replace(/{guild.name}/g, guild.name)
+    .replace(/{guild.id}/g, guild.id)
+    .replace(/{guild.icon}/g, guild.iconURL() || '')
+    .replace(/{guild.member_count}/g, guild.memberCount.toString());
 }
-
 export function isEmptyEmbed(embedData: Embed) {
   if (
     !embedData.title?.length &&
@@ -903,7 +942,6 @@ export function isEmptyEmbed(embedData: Embed) {
     return true;
   else return false;
 }
-
 export function getEmbed(user: User, guild: Guild, embed: Embed): EmbedBuilder {
   return new EmbedBuilder({
     description: embed.description ?? '',
