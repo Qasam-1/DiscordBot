@@ -794,14 +794,8 @@ export class CustomEmbedBuilder extends events {
   private getMessage(user: User, guild: Guild): InteractionEditReplyOptions {
     const embedData = this.message.embed;
     if (isEmptyEmbed(embedData)) {
-      return {
-        content: this.message.content ?? '',
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('<:Palette:1406000920310845491> Embed Editor')
-            .setDescription('> You can edit this embed using the components below, and press <:Tick:1353102784106336340> Save when you are done.')
-        ]
-      };
+      this.message.embed.title = '<:Palette:1406000920310845491> Embed Editor';
+      this.message.embed.description = '> You can edit this embed using the components below, and press **<:Tick:1353102784106336340> Save** when you are done.';
     }
     return {
       content: this.message.content ?? '',
