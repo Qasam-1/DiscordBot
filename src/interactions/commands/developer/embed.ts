@@ -10,7 +10,7 @@ import { logger } from 'utils/logger';
 export default new Command({
   module: ModuleType.General,
   cooldown: 30_000,
-  botPermissions: ['SendMessages'],
+  botPermissions: ['Administrator'],
   data: new SlashCommandBuilder()
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setContexts(InteractionContextType.Guild)
